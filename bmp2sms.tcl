@@ -1,35 +1,36 @@
 #! /usr/bin/env tclsh
 #
-# bmp2sms by Julien Verneuil - 02/11/2014 - last updated : 28/07/2016
+# bmp2sms by Julien Verneuil - 02/11/2014 - last updated : 27/01/2019
 # License: BSDv2
 #
 # this tool was only tested with TCL 8.6.*
 #
-# this tool is basically a 'clone' of bmp2tile made by Maxim [http://www.smspower.org/maxim/Software/BMP2Tile]
-# rewrote it for fun and because i am now under Linux, i also needed extra-features
+# this tool is basically a 'clone' of bmp2tile made by Maxim : http://www.smspower.org/maxim/Software/BMP2Tile
+# rewrote it as a TCL study and with Linux as principal target
 #
 # its purpose is to convert 16 colors images files (PNG/GIF/PPM/PGM) to a format suitable for inclusion in Sega Master System programs (written with wla-dx but other tools may work as well)
 
 # there is some things differing from bmp2tile:
-#      - the program target/focus system is the Sega Master System altough Game Gear could be supported easily
-#      - the program perform 'smart' colours conversion if your image has colours which does not match the SMS palette
+#      - target system is the Sega Master System (no support for Game Gear altough the implementation wouldn't differ by much)
+#      - the program perform 'smart' colours conversion if image colours does not match the SMS palette
 #      - indexed images are loaded as normal images (the palette is ignored), a palette is instead automatically generated
-#      - it load a complete directory instead of loading only one file, there is ongoing support to save all files in one go
-#      - some features are half implemented right now like 8x16 mode and tile mirroring
+#      - it load a complete directory instead of only one file at a time, there is planned support to save all files in one go
+#      - some features from bmp2tile are missing like 8x16 mode and cl123 palette output mode
+#      - palette order may be different so tiles value may be different on the same image (because bmp2tile will load indexed images while bmp2sms always generate it)
+#      - no commandline mode
 #
-# then there is some special features:
-#      - palette index picker (click somewhere on the image)
-#      - palette editor (double click on a palette color square or drag around a color square to organize the palette)
+# then there is some new features:
+#      - palette index picker : select a palette index and click somewhere on the image to change the palette color
+#      - palette editor : double click on a palette color square or drag around a color square to organize the palette
 #
 # if the package TkImg is found then these additional images format will be supported: BMP/JPEG/PCX/XPM/TGA
 #
-# this program also support compression plugins made for bmp2tile (https://github.com/maxim-zhao/bmp2tile-compressors), this feature require the Ffidl Tcl package
+# this program also support compression plugins made for bmp2tile : https://github.com/maxim-zhao/bmp2tile-compressors
+# compression plugins support require the Ffidl TCL package
 #
 # Note for .bmp images: The image should not include colour space information (see BMP export compatibility options for GIMP) otherwise the image will fail to load.
 #
-# WARNING: The code need a severe cleanup, especially for the palette/image data structure, it will be never done probably. (:
-#
-# this is a first try of TCL programming, an interesting programming language with great libraries
+# this is a first try at TCL programming, an interesting scripting language with great libraries
 #
 
 package require Tk
@@ -39,7 +40,7 @@ set use_ffidl 1
 
 set dirName [pwd]
 
-# === check program argument
+# === check program argument for options
 foreach {name} $argv {
 	if {$name eq "-without_TkImg"} {
 		set use_tkimg 0
@@ -54,9 +55,9 @@ set img_format_support ".png,.PNG,.gif,.GIF,.ppm,.PPM,.pgm,.PGM"
 
 if {$use_tkimg} {
     if {[catch {package require Img}]} {
-        puts "Only PNG/GIF/PPM/PGM images files are supported because the TkImg package could not be found. \
-             \nIf you want to load many more images formats, install libtk-img from your package manager.  \
-             \n\nTo turn this message off, use \"-without_TkImg\" as argument." 
+        puts "\n BMP/JPEG/PCX/XPM/TGA support disabled because TkImg package cannot be found. \
+             \n  * Solution : Install libtk-img from your package manager.  \
+             \n Turn this warning off with '-without_TkImg' program argument.\n" 
     } else {
         set img_format_support [append img_format_support ",.bmp,.BMP,.jpg,.jpeg,.JPG,.JPEG,.pcx,.PCX,.xpm,.XPM,.tga,.TGA"]
     }
@@ -74,9 +75,9 @@ set tilemap_plugins [dict create]
 if {$use_ffidl} {
 	if {[catch {package require Ffidl}] || 
 	    [catch {package require Ffidlrt}]} {
-        puts "Compression plugins will be unavailable because the Ffidl package could not be found. \
-             \nIf you want to use compression plugins, install Ffidl (http://elf.org/ffidl).  \
-             \n\nTo turn this message off, use \"-without_Ffidl\" as argument." 
+        puts "\n Compression plugins support disabled because Ffidl package cannot be found. \
+             \n  * Solution : Install Ffidl : http://elf.org/ffidl \
+             \n Turn this warning off with '-without_Ffidl' program argument.\n" 
 	} else {
 		# scan the program folder to find the plugins shared libraries
 		if {$operating_system eq "Linux"     || 
@@ -92,9 +93,9 @@ if {$use_ffidl} {
 		    set plugins_file_list [glob -nocomplain -types {r f} *.dylib]]
 		}
 		
-		# for each lib, check if it is a compression plugin based on symbols name
-		# if it is, it create a TCL command based on the library name and the symbol name
-		# then make it available for either tiles or tilemap export (or both)
+		# for each libraries, check if it is a compression plugin based on the symbols name
+		# if it is then create a TCL command based on the library name and the symbol name
+		# and make it available for either tiles or tilemap export (or both)
 		foreach plugin_filename $plugins_file_list {
 			if {[catch {::ffidl::symbol "[pwd]/$plugin_filename" "getName"} gn_addr]} {
 				puts "Can't get \"getName\" symbol for the plugin \"$plugin_filename\", this plugin will be ignored."
@@ -155,8 +156,8 @@ set window_height 600
 set window_x 0
 set window_y 0
 
-# the fixed font used for the palette read-only entry (is fixed because it should stay aligned with the palette rectangles)
-set fixed_font [font create -size 14 -family Courier -weight bold]
+# the fixed font used for the palette read-only entry (font should be fixed because it should stay aligned with the palette rectangles)
+set fixed_font [font create -size 10 -family Monospace -weight bold]
 
 set TILE_WIDTH  8
 set TILE_HEIGHT 8
@@ -172,6 +173,7 @@ set tilesData ""
 set listBoxCurrentIndex 0
 
 array set tiledImageData {}
+array set tiledDataIndex {}
 
 # store already loaded data (which save data between images selections)
 set loaded_data [dict create]
@@ -265,8 +267,9 @@ proc selectAndLoadDir {} {
     }
 }
 
+# generate map data
 proc updateTileMapData {} {
-    global tiledImageData check_use_sprite_pal check_front_of_sprite TILE_WIDTH tindex_value
+    global tiledImageData tiledDataIndex check_use_sprite_pal check_front_of_sprite TILE_WIDTH tindex_value
     
     set width  [image width preview_image]
 
@@ -279,8 +282,8 @@ proc updateTileMapData {} {
     
     .tilemap_text insert end ".dw "
     foreach index [lsort -dictionary [array names tiledImageData]] {
-        set tindex [expr {$index + $tindex_value}]
-    
+        set tindex [expr {$tiledDataIndex($index) + $tindex_value}]
+
         if {$check_use_sprite_pal} {
             set tindex [expr {$tindex | 2048}]
         }
@@ -289,13 +292,13 @@ proc updateTileMapData {} {
             set tindex [expr {$tindex | 4096}]
         }
 
-        if {[string range $tiledImageData($index) 0 0] eq " "} {
-            .tilemap_text insert end "\$[format %04X [string range $tiledImageData($index) 1 end]] "
+        #if {[string range $tiledImageData($index) 0 0] eq " "} {
+        #    .tilemap_text insert end "\$[format %04X [string range $tiledImageData($index) 1 end]] "
             
             #puts [string range $tiledImageData($index) 1 end]]
-        } else {
+        #} else {
             .tilemap_text insert end "\$[format %04X [expr {$tindex}]] "
-        }
+        #}
         
         incr i
         
@@ -309,14 +312,18 @@ proc updateTileMapData {} {
     .tilemap_text delete [.tilemap_text count -lines 0.0 end].0 end
 }
 
+# generate tiles/map & update preview image
 proc updateImage {} {
-    global tiledImageData host_palette_data indexedImageData tilesData TILE_WIDTH TILE_HEIGHT check_rmdup check_tmirror check_t8x16 tindex_value
+    global tiledImageData tiledDataIndex host_palette_data indexedImageData tilesData TILE_WIDTH TILE_HEIGHT check_rmdup check_tmirror check_t8x16 tindex_value
 
     set width  [image width  preview_image]
     set height [image height preview_image]
 
     array unset tiledImageData *
     array set tiledImageData {}
+    array set tiledHFlipImageData {}
+    array set tiledVFlipImageData {}
+    array set tiledHVFlipImageData {}
     
     set tw [expr {$width / $TILE_WIDTH}]
     
@@ -335,20 +342,45 @@ proc updateImage {} {
         set b1 0
         set b2 0
         set b3 0
+
+        set hfb0 0
+        set hfb1 0
+        set hfb2 0
+        set hfb3 0
         
         foreach pal_index [split $line " "] {
             append l " [.canvas_palette itemcget pal_color_$pal_index -fill]"
-            
-            set bpos [expr {7 - $x & 7}]
+
+            set bpos [expr {7 - ($x & 7)}]
             
             set b0 [expr {$b0 | (( $pal_index & 1)       << $bpos)}]
             set b1 [expr {$b1 | ((($pal_index & 2) >> 1) << $bpos)}]
             set b2 [expr {$b2 | ((($pal_index & 4) >> 2) << $bpos)}]
             set b3 [expr {$b3 | ((($pal_index & 8) >> 3) << $bpos)}]
+
+            # hflip the easy way
+            set bpos [expr {$x & 7}]
+            set hfb0 [expr {$hfb0 | (( $pal_index & 1)       << $bpos)}]
+            set hfb1 [expr {$hfb1 | ((($pal_index & 2) >> 1) << $bpos)}]
+            set hfb2 [expr {$hfb2 | ((($pal_index & 4) >> 2) << $bpos)}]
+            set hfb3 [expr {$hfb3 | ((($pal_index & 8) >> 3) << $bpos)}]
             
             incr x
 
             if {[expr {$x % $TILE_WIDTH}] == 0} {
+                # HFlip
+                set hfb0 [format %02X $hfb0]
+                set hfb1 [format %02X $hfb1]
+                set hfb2 [format %02X $hfb2]
+                set hfb3 [format %02X $hfb3]
+
+                if {[catch {
+		            set hfliptdata [concat $tiledHFlipImageData($ti) " \$$hfb0 \$$hfb1 \$$hfb2 \$$hfb3"]
+                }]} then {
+                    set hfliptdata "\$$hfb0 \$$hfb1 \$$hfb2 \$$hfb3"
+                }
+
+                # tile data
                 set b0 [format %02X $b0]
                 set b1 [format %02X $b1]
                 set b2 [format %02X $b2]
@@ -359,14 +391,36 @@ proc updateImage {} {
                 }]} then {
                     set tdata "\$$b0 \$$b1 \$$b2 \$$b3"
                 }
+
+                # first pass VFlip (flip bitplanes)
+                if {[catch {
+		            set vfliptdata [concat $tiledVFlipImageData($ti) " \$$b3 \$$b2 \$$b1 \$$b0"]
+                }]} then {
+                    set vfliptdata "\$$b3 \$$b2 \$$b1 \$$b0"
+                }
+
+                # first pass HFlip + VFlip (flip bitplanes)
+                if {[catch {
+		            set hvfliptdata [concat $tiledHVFlipImageData($ti) " \$$hfb3 \$$hfb2 \$$hfb1 \$$hfb0"]
+                }]} then {
+                    set hvfliptdata "\$$hfb3 \$$hfb2 \$$hfb1 \$$hfb0"
+                }
                 
                 set b0 0
                 set b1 0
                 set b2 0
                 set b3 0
+
+                set hfb0 0
+                set hfb1 0
+                set hfb2 0
+                set hfb3 0
                 
                 set tiledImageData($ti) $tdata
-                
+                set tiledHFlipImageData($ti) $hfliptdata
+                set tiledVFlipImageData($ti) $vfliptdata
+                set tiledHVFlipImageData($ti) $hvfliptdata
+
                 incr xi
                 incr ti
             }
@@ -380,55 +434,70 @@ proc updateImage {} {
             incr yi $tw
         }
     }
-    
-    #string trimright $string \n <- use this to remove trailing newline at the end of tiles/tilemap
+
+    foreach index [lsort -dictionary [array names tiledVFlipImageData]] {
+        # second pass VFlip
+        set tiledVFlipImageData($index) [join [lreverse [split $tiledVFlipImageData($index)]] " "]
+        # second pass VFlip for HFlip + VFlip
+        set tiledHVFlipImageData($index) [join [lreverse [split $tiledHVFlipImageData($index)]] " "]
+    }
+
+    # remove trailing newline at the end of tiles/tilemap
+    #string trimright $string \n
     
     .tiles_text   delete 0.0 end
-    
-    set sortedTiledImageData [lsort -dictionary [array names tiledImageData]]
-    #set sortedTiledImageDataClone [lsort -dictionary [array names tiledImageData]]
-    set i $tindex_value
-    
-    #foreach index [array names tiledImageData] {
-    #    puts "$index $tiledImageData($index)"
-    #}
-    
-    .tilemap_text insert end ".dw "
-    foreach index $sortedTiledImageData {
-        set dup 0
-        
-        if {$check_rmdup} {
-            foreach index2 $sortedTiledImageData {
-                if {$tiledImageData($index) eq $tiledImageData($index2) && 
-                    [string range $tiledImageData($index) 0 0] != "" &&
-                    [string range $tiledImageData($index2) 0 0] != ""} {
-                    if {$index != $index2} {
-                        set dup 1
-                        set tiledImageData($index) " $i"
-                        
-                        #puts $index2
 
-                        #puts "$index $index2"
-                        #puts tiledImageData $index
-                        
-                        break
+    # generate tiles data
+    array unset tiledDataIndex *
+    array set tiledDataIndex {}
+
+    array set tiledDataDuplicate {}
+    array set tiledDataHMirrored {}
+    array set tiledDataVMirrored {}
+
+    set tiles_count [array size tiledImageData]
+
+    set i 0
+    for {set index 0} {$index < $tiles_count} {incr index} {
+        # remove duplicate
+        if {$check_rmdup} {
+            for {set index2 [expr {$index+1}]} {$index2 < $tiles_count} {incr index2} {
+                if {$tiledImageData($index) eq $tiledImageData($index2)} {
+                    if {![info exists tiledDataDuplicate($index)]} {
+                        set tiledDataDuplicate($index2) 0
+                        set tiledDataIndex($index2) $i
+                    }
+                } elseif {$check_tmirror} {
+                    # remove H mirrored
+                    if {$tiledHFlipImageData($index) eq $tiledImageData($index2)} {
+                        if {![info exists tiledDataMirrored($index)]} {
+                            set tiledDataHMirrored($index2) 0
+                            set tiledDataIndex($index2) [expr {$i | 512}]
+                        }
                     }
                 }
             }
         }
-        
-        if {$dup == 0} {
-            .tiles_text insert end "; Tile index \$[format %X $i]\n.db $tiledImageData($index)\n"
-            
+
+        if {![info exists tiledDataDuplicate($index)] &&
+            ![info exists tiledDataHMirrored($index)]} {
+            set tiledDataIndex($index) $i
             incr i
         }
     }
-    
-    #puts " "
-    #foreach index [lsort -dictionary [array names tiledImageData]] {
-    #    puts "$index $tiledImageData($index)"
-    #}
 
+    # tiles output
+    set i $tindex_value
+    for {set index 0} {$index < [array size tiledImageData]} {incr index} {
+        if {![info exists tiledDataDuplicate($index)] &&
+            ![info exists tiledDataHMirrored($index)]} {
+            .tiles_text insert end "; Tile index \$[format %03X $i]\n.db $tiledImageData($index)\n"
+
+            incr i
+        }
+    }
+
+    # generate tilemap
     updateTileMapData
    
     preview_image put $dst_data
@@ -512,7 +581,7 @@ proc listBoxSelect {} {
     preview_image configure -width 0 -height 0
     
     if {[loadImage $file] eq -1} {
-		selectionLoadFailed "Image format not supported." "(if it is a .bmp, the image should not include colour space information)"
+		selectionLoadFailed "Image format not supported." "(NOTE for .bmp : the image should not include colour space informations)"
 	    
 	    return
     }
@@ -1209,19 +1278,19 @@ bind .tiles_text <3> {
 checkbutton .check_rm_duplicate   -text "Remove duplicates" -variable check_rmdup -command {
     global check_rmdup
 
-    #if {$check_rmdup} {
-    #    .check_tile_mirroring configure -state normal
-    #} else {
-    #    .check_tile_mirroring configure -state disabled
-    #    .check_tile_mirroring deselect
-    #}
+    if {$check_rmdup} {
+        .check_tile_mirroring configure -state normal
+    } else {
+        .check_tile_mirroring configure -state disabled
+        .check_tile_mirroring deselect
+    }
 
     updateImage
 }
 
-#checkbutton .check_tile_mirroring -text "Use tile mirroring" -variable check_tmirror -state disabled -command {
-#    updateImage
-#}
+checkbutton .check_tile_mirroring -text "Use tile mirroring" -variable check_tmirror -state disabled -command {
+    updateImage
+}
 #checkbutton .check_8x16 -text "Treat as 8x16" -variable check_t8x16 -command {
 #    updateImage
 #}
@@ -1259,7 +1328,7 @@ bind .button_save_tiles <ButtonPress> {
 }
 
 grid .check_rm_duplicate   -sticky wn  -row 2 -column 0 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
-#grid .check_tile_mirroring -sticky wn  -row 3 -column 0 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
+grid .check_tile_mirroring -sticky wn  -row 3 -column 0 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 #grid .check_8x16           -sticky w   -row 2 -column 1 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 grid .spinbox_tindex       -sticky wne -row 2 -column 3 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 grid .label_tindex         -sticky wne -row 2 -column 2 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
