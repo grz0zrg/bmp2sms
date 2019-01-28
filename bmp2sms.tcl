@@ -1,25 +1,29 @@
 #! /usr/bin/env tclsh
 #
-# bmp2sms by Julien Verneuil - 02/11/2014 - last updated : 27/01/2019
+# bmp2sms by Julien Verneuil - 02/11/2014 - last updated : 28/01/2019
 # License: BSDv2
 #
 # this tool was only tested with TCL 8.6.*
 #
 # this tool is basically a 'clone' of bmp2tile made by Maxim : http://www.smspower.org/maxim/Software/BMP2Tile
-# rewrote it as a TCL study and with Linux as principal target
+# rewrote it as a TCL study and most importantly with portability in mind
 #
-# its purpose is to convert 16 colors images files (PNG/GIF/PPM/PGM) to a format suitable for inclusion in Sega Master System programs (written with wla-dx but other tools may work as well)
-
+# its purpose is to convert 16 colors images files to a format suitable for inclusion in Sega Master System programs (written with wla-dx but other tools may work as well)
+#
+# bmp2sms support PNG/GIF/PPM/PGM by default without the TkImg package (see below)
+# images should have a width / height that are multiples of 8 otherwise padding will be added.
+#
 # there is some things differing from bmp2tile:
-#      - target system is the Sega Master System (no support for Game Gear altough the implementation wouldn't differ by much)
+#      - target system is the Sega Master System (no support for Game Gear altough adding it would be easy)
 #      - the program perform 'smart' colours conversion if image colours does not match the SMS palette
 #      - indexed images are loaded as normal images (the palette is ignored), a palette is instead automatically generated
 #      - it load a complete directory instead of only one file at a time, there is planned support to save all files in one go
 #      - some features from bmp2tile are missing like 8x16 mode and cl123 palette output mode
 #      - palette order may be different so tiles value may be different on the same image (because bmp2tile will load indexed images while bmp2sms always generate it)
 #      - no commandline mode
+#      - no status bar
 #
-# then there is some new features:
+# then there is some features:
 #      - palette index picker : select a palette index and click somewhere on the image to change the palette color
 #      - palette editor : double click on a palette color square or drag around a color square to organize the palette
 #
@@ -452,6 +456,7 @@ proc updateImage {} {
     array set tiledDataIndex {}
 
     array set tiledDataDuplicate {}
+    array set tiledDataMirrored {}
     array set tiledDataHMirrored {}
     array set tiledDataVMirrored {}
 
@@ -459,28 +464,45 @@ proc updateImage {} {
 
     set i 0
     for {set index 0} {$index < $tiles_count} {incr index} {
-        # remove duplicate
         if {$check_rmdup} {
+            # remove duplicate
             for {set index2 [expr {$index+1}]} {$index2 < $tiles_count} {incr index2} {
                 if {$tiledImageData($index) eq $tiledImageData($index2)} {
-                    if {![info exists tiledDataDuplicate($index)]} {
+                    if {![info exists tiledDataDuplicate($index)] &&
+                        ![info exists tiledDataMirrored($index)]} {
                         set tiledDataDuplicate($index2) 0
                         set tiledDataIndex($index2) $i
                     }
-                } elseif {$check_tmirror} {
-                    # remove H mirrored
-                    if {$tiledHFlipImageData($index) eq $tiledImageData($index2)} {
-                        if {![info exists tiledDataMirrored($index)]} {
-                            set tiledDataHMirrored($index2) 0
+                }
+            }
+
+            # remove mirrored tiles & flag it into the tilemap
+            if {$check_tmirror} {
+                for {set index2 [expr {$index+1}]} {$index2 < $tiles_count} {incr index2} {
+                    if {![info exists tiledDataDuplicate($index)] &&
+                        ![info exists tiledDataDuplicate($index2)] &&
+                        ![info exists tiledDataMirrored($index)]} {
+                        # remove H mirrored
+                        if {$tiledHFlipImageData($index) eq $tiledImageData($index2)} {
+                            set tiledDataMirrored($index2) 0
                             set tiledDataIndex($index2) [expr {$i | 512}]
+                        # remove V mirrored
+                        } elseif {$tiledVFlipImageData($index) eq $tiledImageData($index2)} {
+                            set tiledDataMirrored($index2) 0
+                            set tiledDataIndex($index2) [expr {$i | 1024}]
+                        # remove H+V mirrored
+                        } elseif {$tiledHVFlipImageData($index) eq $tiledImageData($index2)} {
+                            set tiledDataMirrored($index2) 0
+                            set tiledDataIndex($index2) [expr {$i | 1536}]
                         }
                     }
                 }
             }
         }
 
+        # regular tile
         if {![info exists tiledDataDuplicate($index)] &&
-            ![info exists tiledDataHMirrored($index)]} {
+            ![info exists tiledDataMirrored($index)]} {
             set tiledDataIndex($index) $i
             incr i
         }
@@ -490,7 +512,7 @@ proc updateImage {} {
     set i $tindex_value
     for {set index 0} {$index < [array size tiledImageData]} {incr index} {
         if {![info exists tiledDataDuplicate($index)] &&
-            ![info exists tiledDataHMirrored($index)]} {
+            ![info exists tiledDataMirrored($index)]} {
             .tiles_text insert end "; Tile index \$[format %03X $i]\n.db $tiledImageData($index)\n"
 
             incr i
