@@ -1225,7 +1225,7 @@ menu .tiles_export_menu -tearoff 0
 # tilemap export menu
 menu .tilemap_export_menu -tearoff 0
     .tilemap_export_menu add command -label "Include file (*.inc)" -command {
-        saveTilemap ".inc" ""
+        saveTilemap ".inc" 0
     }
     .tilemap_export_menu add separator
     dict for {plugin_name data} $tilemap_plugins {
