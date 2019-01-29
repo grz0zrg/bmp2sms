@@ -603,7 +603,11 @@ proc listBoxSelect {} {
     preview_image configure -width 0 -height 0
     
     if {[loadImage $file] eq -1} {
-		selectionLoadFailed "Image format not supported." "(NOTE for .bmp : the image should not include colour space informations)"
+        if {[string tolower [file extension $file]] eq ".bmp"} {
+		    selectionLoadFailed "Image format not supported" "NOTE : the image should not include colour space informations"
+        } else {
+            selectionLoadFailed "Image format not supported" ""
+        }
 	    
 	    return
     }
