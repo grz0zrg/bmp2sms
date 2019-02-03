@@ -19,6 +19,7 @@
 #      - indexed images are loaded as normal images (the palette is ignored), a palette is instead automatically generated
 #      - it load a complete directory instead of only one file at a time, there is planned support to save all files in one go
 #      - some features from bmp2tile are missing like 8x16 mode and cl123 palette output mode
+#      - allow negative tile start index (-1 = 0x3ff etc.) which may be useful for some effects
 #      - palette order may be different so tiles value may be different on the same image (because bmp2tile will load indexed images while bmp2sms always generate it)
 #      - no commandline mode
 #      - no status bar
@@ -172,6 +173,7 @@ set paletteEntryText ""
 
 set currPalTag ""
 set indexedImageData ""
+set indexedImageData8x16 ""
 
 set tilesData ""
 set listBoxCurrentIndex 0
@@ -295,6 +297,10 @@ proc updateTileMapData {} {
     .tilemap_text insert end ".dw "
     foreach index [lsort -dictionary [array names tiledImageData]] {
         set tindex [expr {$tiledDataIndex($index) + $tindex_value}]
+
+        if {$tindex < 0} {
+            set tindex [expr {1024 + $tindex}]
+        }
 
         if {$check_use_sprite_pal} {
             set tindex [expr {$tindex | 2048}]
@@ -521,7 +527,11 @@ proc updateImage {} {
     for {set index 0} {$index < [array size tiledImageData]} {incr index} {
         if {![info exists tiledDataDuplicate($index)] &&
             ![info exists tiledDataMirrored($index)]} {
-            .tiles_text insert end "; Tile index \$[format %03X $i]\n.db $tiledImageData($index)\n"
+            set tid $i
+            if {$i < 0} {
+                set tid [expr {1024 + $i}]
+            }
+            .tiles_text insert end "; Tile index \$[format %03X $tid]\n.db $tiledImageData($index)\n"
 
             incr i
         }
@@ -595,7 +605,7 @@ proc selectionLoadFailed {msg detail} {
 }
 
 proc listBoxSelect {} {
-    global dirName dstPalette indexedImageData host_palette_data listBoxCurrentIndex
+    global dirName dstPalette indexedImageData indexedImageData8x16 host_palette_data listBoxCurrentIndex
     global TILE_WIDTH TILE_HEIGHT
     global loaded_data
 
@@ -609,7 +619,7 @@ proc listBoxSelect {} {
     set file [file join $dirName $selectionName]
     
     preview_image configure -width 0 -height 0
-    
+
     if {[loadImage $file] eq -1} {
         if {[string tolower [file extension $file]] eq ".bmp"} {
 		    selectionLoadFailed "Image format not supported" "NOTE : the image should not include colour space informations"
@@ -630,9 +640,12 @@ proc listBoxSelect {} {
     preview_image configure -width $fixed_img_width -height $fixed_img_height
     
     set src_data [preview_image data -background "#000000"]
+
+    # 8x16 temporary data structure
+    set line8x16 { }
     
     initializePalette
-		
+	
     if {[catch {set indexedImageData [dict get $loaded_data "image $selectionName"] 
     	        set palette          [dict get $loaded_data "pal $selectionName"]}]} {
 		set dst_data [list]
@@ -641,17 +654,22 @@ proc listBoxSelect {} {
 		
 		set indexedImageData ""
 		set host_palette_data ""
-	
+
+        set v 0
+
 		foreach line $src_data {
 		    set l ""
 		    set hl ""
+            
+            set k 0
+            set sb { }
 		    foreach hex_color [split $line " "] {
 		        lassign [winfo rgb . $hex_color] r g b
 
 		        set color ""
 		        
 		        if {[dict size $palette] >= 16} {
-					selectionLoadFailed "The image have too many colours." "(max: 16)"
+					selectionLoadFailed "The image have too many colours" "(max: 16)"
 			
 		        	return
 		        }
@@ -677,13 +695,26 @@ proc listBoxSelect {} {
 		        append hl "[dict get $palette $color] "
 		        
 		        append l "$color "
+
+                # 8x16 construction (90° rotated data)
+                #lappend sb [dict get $palette $color]
+                #incr k
+                #if {[expr { $k % 8 }] == 0} {
+                #    set sb { }
+                #    if { [lindex $line8x16 $v] eq "" } {
+                #        linsert $line8x16 { }
+                #    }
+
+
+                #}
+                #
 		    }
 		    
 		    set hl [string trimleft  $hl " "]
 		    set l  [string trimleft  $l  " "]
 		    set hl [string trimright $hl " "]
 		    set l  [string trimright $l  " "]
-		    
+
 		    set dst_data "$dst_data {$l}"
 		    set indexedImageData "$indexedImageData {$hl}"
 		}
@@ -691,6 +722,7 @@ proc listBoxSelect {} {
 		updatePaletteData
 		
 		dict set loaded_data "image $selectionName" $indexedImageData
+    # cached image data (eg. previously loaded)
     } else {
     	set i 0
     	foreach {pal_index} $palette {
@@ -1296,11 +1328,11 @@ checkbutton .check_rm_duplicate   -text "Remove duplicates" -variable check_rmdu
 checkbutton .check_tile_mirroring -text "Use tile mirroring" -variable check_tmirror -state disabled -command {
     updateImage
 }
-#checkbutton .check_8x16 -text "Treat as 8x16" -variable check_t8x16 -command {
-#    updateImage
-#}
+checkbutton .check_8x16 -text "Treat as 8x16" -variable check_t8x16 -command {
+    updateImage
+}
 
-ttk::spinbox .spinbox_tindex -from 0 -to 999999999 -increment 1 -width 8 -textvariable tindex_value -command "updateImage" -validate all -validatecommand {
+ttk::spinbox .spinbox_tindex -from -999999999 -to 999999999 -increment 1 -width 8 -textvariable tindex_value -command "updateImage" -validate all -validatecommand {
     set v %P
     
     if {[string is integer $v]} {
@@ -1334,7 +1366,7 @@ bind .button_save_tiles <ButtonPress> {
 
 grid .check_rm_duplicate   -sticky wn  -row 2 -column 0 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 grid .check_tile_mirroring -sticky wn  -row 3 -column 0 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
-#grid .check_8x16           -sticky w   -row 2 -column 1 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
+grid .check_8x16           -sticky w   -row 2 -column 1 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 grid .spinbox_tindex       -sticky wne -row 2 -column 3 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 grid .label_tindex         -sticky wne -row 2 -column 2 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles
 grid .button_save_tiles    -sticky wne -row 3 -column 3 -padx 0 -pady 0 -in .frame_tabs.notebook.tiles

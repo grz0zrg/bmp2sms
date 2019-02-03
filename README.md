@@ -17,6 +17,7 @@ there is some things differing from bmp2tile:
  * it load a complete directory instead of only one file at a time, there is planned support to save all files in one go
  * some features from bmp2tile are missing like 8x16 mode and cl123 palette output mode
  * palette order may be different so tiles value may be different on the same image (because bmp2tile will load indexed images while bmp2sms always generate it)
+ * allow negative tile start index (-1 = 0x3ff etc.) which may be useful for some effects
  * no commandline mode
  * no status bar
 
