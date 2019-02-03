@@ -232,13 +232,18 @@ proc setDirFrameError m {
 }
 
 proc loadDir {} {
-    global dirName img_format_support
+    global dirName img_format_support loaded_data
     
     .frame_files.list delete 0 end
     preview_image blank
+
+    if {![file exists $dirName]} then {
+    	setDirFrameError "Invalid path."
+    	return
+    }
         
     if {![file isdirectory $dirName]} then {
-    	setDirFrameError "Invalid path or not a directory."
+    	setDirFrameError "Not a directory."
     	return
     }
 
@@ -246,6 +251,9 @@ proc loadDir {} {
 	    setDirFrameError "There is no supported images in this directory."
 	    return
     }
+
+    # clear cache
+    set loaded_data [dict create]
         
     setDirFrameError ""
     
@@ -775,35 +783,6 @@ proc itemDrag {c x y} {
     
     $c move current [expr {$x-$lastX}] 0
     set lastX $x
-
-	#puts $old_index
-	#puts $new_index
-	
-    #set new_indexed_data [list]
-    #foreach line $indexedImageData {
-    #    set l ""
-    #    foreach pal_index [split $line " "] {
-    #        if {$pal_index == $old_index} {
-    #            append l " $new_index"
-    #        } elseif {$pal_index == $new_index} {
-    #            append l " $old_index"
-    #        } else {
-    #            append l " $pal_index"
-    #        }
-    #    }
-        
-    #    set new_indexed_data "$new_indexed_data {$l}"
-    #}
-    
-    #foreach line $new_indexed_data {
-    #	puts $line
-    #}
-    
-    #set indexedImageData [string trimleft $indexedImageData " "]
-    
-    #foreach line $indexedImageData {
-    #	puts $line
-    #}
     
     updatePaletteData
 }
